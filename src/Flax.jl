@@ -46,10 +46,10 @@ task_local_storage(:__vars, Dict{Symbol,Any}())
 
 Cleans up the template before rendering (ex by removing empty nodes).
 """
-function prepare_template(s::String)
+function prepare_template(s::String) :: String
   s
 end
-function prepare_template{T}(v::Vector{T})
+function prepare_template{T}(v::Vector{T}) :: String
   filter!(v) do (x)
     ! isa(x, Void)
   end
@@ -66,10 +66,10 @@ function attributes(attrs::Vector{Pair{Symbol,String}} = Vector{Pair{Symbol,Stri
   a = String[]
   for (k,v) in attrs
     if startswith(v, "<:") && endswith(v, ":>")
-      v = (replace(replace(replace(v, "<:", ""), ":>", ""), "'", "\"") |> strip)
+      v = replace("'", "\"") |> strip
       v = "\$($v)"
     end
-    push!(a, """$(k)=\"$(v)\" """)
+    push!(a, "$(k)=\"$(v)\"")
   end
 
   a
@@ -83,14 +83,18 @@ Generates a regular HTML element in the form <...></...>
 """
 function normal_element(f::Function, elem::String, attrs::Vector{Pair{Symbol,String}} = Vector{Pair{Symbol,String}}()) :: HTMLString
   a = attributes(attrs)
-  """ <$( string(lowercase(elem)) * (! isempty(a) ? (" " * join(a, " ")) : "") )>
-        $(prepare_template(f()))
-      </$( string(lowercase(elem)) )>\n"""
+  """
+    <$( string(lowercase(elem)) * (! isempty(a) ? (" " * join(a, " ")) : "") )>
+      $(prepare_template(f()))
+    </$( string(lowercase(elem)) )>
+  """
 end
 function normal_element(elem::String, attrs::Vector{Pair{Symbol,String}} = Vector{Pair{Symbol,String}}()) :: HTMLString
   a = attributes(attrs)
 
-  """<$( string(lowercase(elem)) * (! isempty(a) ? (" " * join(a, " ")) : "") )></$( string(lowercase(elem)) )>\n"""
+  """
+    <$( string(lowercase(elem)) * (! isempty(a) ? (" " * join(a, " ")) : "") )></$( string(lowercase(elem)) )>
+  """
 end
 
 
@@ -102,7 +106,9 @@ Generates a void HTML element in the form <...>
 function void_element(elem::String, attrs::Vector{Pair{Symbol,String}} = Vector{Pair{Symbol,String}}()) :: HTMLString
   a = attributes(attrs)
 
-  "<$( string(lowercase(elem)) * (! isempty(a) ? (" " * join(a, " ")) : "") )>\n"
+  """
+    <$( string(lowercase(elem)) * (! isempty(a) ? (" " * join(a, " ")) : "") )>
+  """
 end
 
 
@@ -113,7 +119,9 @@ end
 Cleans up empty elements.
 """
 function skip_element(f::Function) :: HTMLString
-  """$(prepare_template(f()))\n"""
+  """
+    $(prepare_template(f()))
+  """
 end
 function skip_element() :: HTMLString
   ""
@@ -137,7 +145,7 @@ function _include_template(path::String; partial = true, func_name = "") :: Stri
   _path, _extension = "", ""
   if isfile(relpath(path))
     _path, _extension = relpath(path), split(path, ".")[end]
-  else 
+  else
     for file_extension in SUPPORTED_HTML_OUTPUT_FILE_FORMATS
       if isfile(relpath(path * file_extension))
         _path, _extension = relpath(path * file_extension), file_extension
@@ -160,7 +168,8 @@ function _include_template(path::String; partial = true, func_name = "") :: Stri
     cache_file_name = sha1(path)
 
     if isfile(file_path)
-      App.config.log_views && Logger.log("Hit cache for view $path", :info)
+      App.config.log_views && Logger.log("✅ hit cache for view $path", :info)
+      
       return Base.invokelatest(file_path |> include)
     else
       flax_code = html_to_flax(path, partial = partial)
@@ -170,6 +179,7 @@ function _include_template(path::String; partial = true, func_name = "") :: Stri
       open(file_path, "w") do io
         write(io, flax_code)
       end
+
       return Base.invokelatest(flax_code |> include_string)
     end
   end
