@@ -37,6 +37,9 @@ const SUPPORTED_HTML_OUTPUT_FILE_FORMATS = [TEMPLATE_EXT, MARKDOWN_FILE_EXT]
 const HTMLString = String
 const JSONString = String
 
+const BUILD_NAME = "FlaxViews"
+
+
 task_local_storage(:__vars, Dict{Symbol,Any}())
 
 
@@ -161,15 +164,16 @@ function _include_template(path::String; partial = true, func_name = "") :: Stri
   end
 
   f_name = func_name != "" ? Symbol(func_name) : Symbol(function_name(path))
-  App.config.flax_compile_templates && isdefined(f_name) && return getfield(current_module(), f_name)()
 
   if App.config.flax_compile_templates
+    isdefined(f_name) && return getfield(current_module(), f_name)()
+    
     file_path = joinpath(App.config.cache_folder, path) * FILE_EXT
     cache_file_name = sha1(path)
 
     if isfile(file_path)
       App.config.log_views && Logger.log("✅ hit cache for view $path", :info)
-      
+
       return Base.invokelatest(file_path |> include)
     else
       flax_code = html_to_flax(path, partial = partial)
@@ -558,6 +562,19 @@ end
 
 function el(; vars...)
   OrderedDict(vars)
+end
+
+
+"""
+    prepare_build() :: Bool
+
+Sets up the build folder and the build module file for generating the compiled views.
+"""
+function prepare_build() :: Bool
+  isdir(Genie.BUILD_PATH) || mkdir(Genie.BUILD_PATH)
+  isfile(joinpath(Genie.BUILD_PATH, BUILD_NAME)) || touch(joinpath(Genie.BUILD_PATH, BUILD_NAME))
+
+  true
 end
 
 end
