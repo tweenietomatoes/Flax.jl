@@ -3,7 +3,7 @@ Compiled templating language for Genie.
 """
 module Flax
 
-using Genie, Renderer, Gumbo, Logger, Genie.Configuration, Router, SHA, App, Reexport, JSON, DataStructures
+using Genie, Renderer, Gumbo, Logger, Genie.Configuration, Router, SHA, App, Reexport, JSON, DataStructures, Revise
 
 if IS_IN_APP
   @eval parse("@dependencies")
@@ -37,7 +37,8 @@ const SUPPORTED_HTML_OUTPUT_FILE_FORMATS = [TEMPLATE_EXT, MARKDOWN_FILE_EXT]
 const HTMLString = String
 const JSONString = String
 
-const BUILD_NAME = "FlaxViews"
+const BUILD_NAME    = "FlaxViews"
+const MD_BUILD_NAME = "MarkdownViews"
 
 
 task_local_storage(:__vars, Dict{Symbol,Any}())
@@ -159,46 +160,54 @@ function _include_template(path::String; partial = true, func_name = "") :: Stri
 
   _path == "" ? error("File not found $path in $(@__FILE__):$(@__LINE__)") : path = _path
 
-  if _extension == MARKDOWN_FILE_EXT
-    return Markdown.parse(include_string(string('"', readstring(path), '"'))) |> Markdown.html
+  if _extension == MARKDOWN_FILE_EXT[2:end]
+    build_path = joinpath(Genie.BUILD_PATH, MD_BUILD_NAME, md_build_name(path))
+    isfile(build_path) && ! build_is_stale(path, build_path) && return readstring(build_path)
+
+    md_html = Markdown.parse(include_string(string('"', readstring(path), '"'))) |> Markdown.html
+    open(joinpath(Genie.BUILD_PATH, MD_BUILD_NAME, md_build_name(path)), "w") do io
+      write(io, md_html)
+    end
+
+    return md_html
   end
 
   f_name = func_name != "" ? Symbol(func_name) : Symbol(function_name(path))
-
-  if App.config.flax_compile_templates
-    isdefined(f_name) && return getfield(current_module(), f_name)()
-    
-    file_path = joinpath(App.config.cache_folder, path) * FILE_EXT
-    cache_file_name = sha1(path)
-
-    if isfile(file_path)
-      App.config.log_views && Logger.log("✅ hit cache for view $path", :info)
-
-      return Base.invokelatest(file_path |> include)
-    else
-      flax_code = html_to_flax(path, partial = partial)
-      if ! isdir(joinpath(App.config.cache_folder, dirname(path)))
-        mkpath(joinpath(App.config.cache_folder, dirname(path)))
-      end
-      open(file_path, "w") do io
-        write(io, flax_code)
-      end
-
-      return Base.invokelatest(flax_code |> include_string)
-    end
-  end
-
-  flax_code = html_to_flax(path, partial = partial)
   try
-    Base.invokelatest(flax_code |> include_string)
-  catch ex
-    @show flax_code
+    build_path = joinpath(Genie.BUILD_PATH, BUILD_NAME, m_name(path) * ".jl")
+    isdefined(Flax, f_name) &&
+      (App.config.flax_compile_templates || ! build_is_stale(path, build_path)) &&
+        return getfield(Flax, f_name)()
 
-    Logger.log("Error including Flax code $(flax_code)", :err)
+    build_module(html_to_flax(path, partial = partial), path)
+    eval(Flax, parse("using $(m_name(path))"))
+
+    return getfield(Flax, f_name) |> Base.invokelatest
+  catch ex
     Logger.log("$(@__FILE__):$(@__LINE__)", :err)
 
     rethrow(ex)
   end
+end
+
+
+"""
+"""
+function md_build_name(path::String)
+  replace(path, "/", "_")
+end
+
+
+"""
+"""
+function build_is_stale(file_path::String, build_path::String)
+  file_mtime = stat(file_path).mtime
+  build_mtime = stat(build_path).mtime
+  status = file_mtime > build_mtime
+
+  App.config.log_views && status && Logger.log("🚨  Flax view $file_path build $build_path is stale")
+
+  status
 end
 
 
@@ -285,11 +294,22 @@ end
 """
     function_name(file_path::String)
 
-Generates random functions names for generated Flax views functions.
+Generates function name for generated Flax views.
 """
 function function_name(file_path::String)
   file_path = relpath(file_path)
-  "func_$(sha1(file_path) |> bytes2hex )"
+  "func_$(sha1(file_path) |> bytes2hex)"
+end
+
+
+"""
+    m_name(file_path::String)
+
+Generates module name for generated Flax views.
+"""
+function m_name(file_path::String)
+  file_path = relpath(file_path)
+  "Module$(sha1(file_path) |> bytes2hex)"
 end
 
 
@@ -299,12 +319,26 @@ end
 Converts a HTML document to a Flax document.
 """
 function html_to_flax(file_path::String; partial = true) :: String
-  code =  """using Flax\n"""
+  code =  """module $(m_name(file_path)) \n"""
+  code *= """using Flax\n"""
+  code *= """export $(function_name(file_path)) \n"""
   code *= """function $(function_name(file_path))() \n"""
   code *= parse_template(file_path, partial = partial)
+  code *= """\nend \n"""
   code *= """\nend"""
 
   code
+end
+
+
+"""
+"""
+function build_module(content::String, path::String) :: Bool
+  open(joinpath(Genie.BUILD_PATH, BUILD_NAME, m_name(path) * ".jl"), "w") do io
+    write(io, content)
+  end
+
+  true
 end
 
 
@@ -570,11 +604,16 @@ end
 
 Sets up the build folder and the build module file for generating the compiled views.
 """
-function prepare_build() :: Bool
-  isdir(Genie.BUILD_PATH) || mkdir(Genie.BUILD_PATH)
-  isfile(joinpath(Genie.BUILD_PATH, BUILD_NAME)) || touch(joinpath(Genie.BUILD_PATH, BUILD_NAME))
+function prepare_build(subfolder) :: Bool
+  rm(subfolder, force = true, recursive = true)
+
+  build_path = joinpath(Genie.BUILD_PATH, subfolder)
+  isdir(build_path) || mkpath(build_path)
+  push!(LOAD_PATH, build_path)
 
   true
 end
+prepare_build(BUILD_NAME)
+prepare_build(MD_BUILD_NAME)
 
 end
