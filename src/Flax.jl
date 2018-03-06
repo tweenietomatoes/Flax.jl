@@ -177,7 +177,7 @@ function _include_template(path::String; partial = true, func_name = "") :: Stri
     build_path = joinpath(Genie.BUILD_PATH, BUILD_NAME, m_name(path) * ".jl")
     isdefined(Flax, f_name) &&
       (App.config.flax_compile_templates || ! build_is_stale(path, build_path)) &&
-        return getfield(Flax, f_name)()
+        return getfield(Flax, f_name) |> Base.invokelatest
 
     build_module(html_to_flax(path, partial = partial), path)
     eval(Flax, parse("using $(m_name(path))"))
