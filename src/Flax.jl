@@ -147,8 +147,8 @@ function include_template(path::String; partial = true, func_name = "") :: Strin
 end
 function _include_template(path::String; partial = true, func_name = "") :: String
   _path, _extension = "", ""
-  if isfile(relpath(path))
-    _path, _extension = relpath(path), split(path, ".")[end]
+  if isfile(abspath(path))
+    _path, _extension = relpath(path), "." * split(path, ".")[end]
   else
     for file_extension in SUPPORTED_HTML_OUTPUT_FILE_FORMATS
       if isfile(relpath(path * file_extension))
@@ -160,7 +160,7 @@ function _include_template(path::String; partial = true, func_name = "") :: Stri
 
   _path == "" ? error("File not found $path in $(@__FILE__):$(@__LINE__)") : path = _path
 
-  if _extension == MARKDOWN_FILE_EXT[2:end]
+  if _extension == MARKDOWN_FILE_EXT # .md
     build_path = joinpath(Genie.BUILD_PATH, MD_BUILD_NAME, md_build_name(path))
     isfile(build_path) && ! build_is_stale(path, build_path) && return readstring(build_path)
 
@@ -193,14 +193,14 @@ end
 
 """
 """
-function md_build_name(path::String)
+function md_build_name(path::String) :: String
   replace(path, "/", "_")
 end
 
 
 """
 """
-function build_is_stale(file_path::String, build_path::String)
+function build_is_stale(file_path::String, build_path::String) :: Bool
   file_mtime = stat(file_path).mtime
   build_mtime = stat(build_path).mtime
   status = file_mtime > build_mtime
@@ -216,7 +216,7 @@ end
 
 Renders a HTML view corresponding to a resource and a controller action.
 """
-function html(resource::Symbol, action::Symbol, layout::Symbol; vars...) :: Dict{Symbol,String}
+function html(resource::Union{Symbol,String}, action::Union{Symbol,String}, layout::Union{Symbol,String}; vars...) :: Dict{Symbol,String}
   try
     task_local_storage(:__vars, Dict{Symbol,Any}(vars))
     task_local_storage(:__yield, include_template(joinpath(Genie.RESOURCES_PATH, string(resource), Renderer.VIEWS_FOLDER, string(action))))
@@ -236,7 +236,7 @@ end
 
 Renders a Flax view corresponding to a resource and a controller action.
 """
-function flax(resource::Symbol, action::Symbol, layout::Symbol; vars...) :: Dict{Symbol,String}
+function flax(resource::Union{Symbol,String}, action::Union{Symbol,String}, layout::Union{Symbol,String}; vars...) :: Dict{Symbol,String}
   try
     julia_action_template_func = joinpath(Genie.RESOURCES_PATH, string(resource), Renderer.VIEWS_FOLDER, string(action) * FILE_EXT) |> include
     julia_layout_template_func = joinpath(Genie.APP_PATH, Renderer.LAYOUTS_FOLDER, string(layout) * FILE_EXT) |> include
@@ -276,7 +276,7 @@ end
 
 Renders a JSON view corresponding to a resource and a controller action.
 """
-function json(resource::Symbol, action::Symbol; vars...) :: Dict{Symbol,String}
+function json(resource::Union{Symbol,String}, action::Union{Symbol,String}; vars...) :: Dict{Symbol,String}
   try
     task_local_storage(:__vars, Dict{Symbol,Any}(vars))
 
@@ -296,7 +296,7 @@ end
 
 Generates function name for generated Flax views.
 """
-function function_name(file_path::String)
+function function_name(file_path::String) :: String
   file_path = relpath(file_path)
   "func_$(sha1(file_path) |> bytes2hex)"
 end
@@ -307,7 +307,7 @@ end
 
 Generates module name for generated Flax views.
 """
-function m_name(file_path::String)
+function m_name(file_path::String) :: String
   file_path = relpath(file_path)
   "Module$(sha1(file_path) |> bytes2hex)"
 end
