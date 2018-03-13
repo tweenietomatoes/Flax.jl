@@ -545,6 +545,7 @@ end
 """
 macro foreach(f, arr)
   quote
+    isempty($arr) && return ""
     mapreduce(*, $arr) do _s
       $f(_s)
     end
