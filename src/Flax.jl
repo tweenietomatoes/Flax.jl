@@ -10,7 +10,7 @@ if IS_IN_APP
 end
 
 export HTMLString, JSONString
-export doctype, var_dump, include_template, @vars, @yield, el, foreachvar
+export doctype, var_dump, include_template, @vars, @yield, el, foreachvar, @foreach
 
 import Base.string
 
@@ -538,6 +538,17 @@ function include_helpers() :: Void
   end
 
   nothing
+end
+
+
+"""
+"""
+macro foreach(f, arr)
+  quote
+    mapreduce(*, $arr) do _s
+      $f(_s)
+    end
+  end
 end
 
 
