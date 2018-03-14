@@ -87,18 +87,13 @@ Generates a regular HTML element in the form <...></...>
 """
 function normal_element(f::Function, elem::String, attrs::Vector{Pair{Symbol,String}} = Vector{Pair{Symbol,String}}()) :: HTMLString
   a = attributes(attrs)
-  """
-    <$( string(lowercase(elem)) * (! isempty(a) ? (" " * join(a, " ")) : "") )>
-      $(prepare_template(f()))
-    </$( string(lowercase(elem)) )>
-  """
+
+  "<$(string(lowercase(elem)) * (! isempty(a) ? (" " * join(a, " ")) : ""))>$(prepare_template(f()))</$(string(lowercase(elem)))>"
 end
 function normal_element(elem::String, attrs::Vector{Pair{Symbol,String}} = Vector{Pair{Symbol,String}}()) :: HTMLString
   a = attributes(attrs)
 
-  """
-    <$( string(lowercase(elem)) * (! isempty(a) ? (" " * join(a, " ")) : "") )></$( string(lowercase(elem)) )>
-  """
+  "<$(string(lowercase(elem)) * (! isempty(a) ? (" " * join(a, " ")) : ""))></$(string(lowercase(elem)))>"
 end
 
 
@@ -110,9 +105,7 @@ Generates a void HTML element in the form <...>
 function void_element(elem::String, attrs::Vector{Pair{Symbol,String}} = Vector{Pair{Symbol,String}}()) :: HTMLString
   a = attributes(attrs)
 
-  """
-    <$( string(lowercase(elem)) * (! isempty(a) ? (" " * join(a, " ")) : "") )>
-  """
+  "<$(string(lowercase(elem)) * (! isempty(a) ? (" " * join(a, " ")) : ""))>"
 end
 
 
@@ -123,9 +116,7 @@ end
 Cleans up empty elements.
 """
 function skip_element(f::Function) :: HTMLString
-  """
-    $(prepare_template(f()))
-  """
+  "$(prepare_template(f()))"
 end
 function skip_element() :: HTMLString
   ""
@@ -180,7 +171,9 @@ function _include_template(path::String; partial = true, func_name = "") :: Stri
         return getfield(Flax, f_name) |> Base.invokelatest
 
     build_module(html_to_flax(path, partial = partial), path)
-    eval(Flax, parse("using $(m_name(path))"))
+
+    isdefined(Flax, Symbol(m_name(path))) || eval(Flax, parse("using $(m_name(path))"))
+    isdefined(current_module(), Symbol(m_name(path))) && eval(current_module(), parse("Revise.revise($(m_name(path)))"))
 
     return getfield(Flax, f_name) |> Base.invokelatest
   catch ex
@@ -320,7 +313,7 @@ Converts a HTML document to a Flax document.
 """
 function html_to_flax(file_path::String; partial = true) :: String
   code =  """module $(m_name(file_path)) \n"""
-  code *= """using Flax\n"""
+  code *= """using Flax, Router\n"""
   code *= """export $(function_name(file_path)) \n"""
   code *= """function $(function_name(file_path))() \n"""
   code *= parse_template(file_path, partial = partial)
@@ -334,7 +327,8 @@ end
 """
 """
 function build_module(content::String, path::String) :: Bool
-  open(joinpath(Genie.BUILD_PATH, BUILD_NAME, m_name(path) * ".jl"), "w") do io
+  module_path = joinpath(Genie.BUILD_PATH, BUILD_NAME, m_name(path) * ".jl")
+  open(module_path, "w") do io
     write(io, content)
   end
 
@@ -385,7 +379,7 @@ function parse_tree(elem, output, depth; partial = true) :: String
 
       if attrs(elem)["type"] == "julia/eval"
         if ! isempty(children(elem))
-          output *= repeat("\t", depth) * string(children(elem)[1].text) * " \n"
+          output *= repeat("\t", depth) * string(children(elem)[1].text) * "\n"
         end
       end
 
@@ -419,7 +413,7 @@ function parse_tree(elem, output, depth; partial = true) :: String
       if ! isempty(children(elem))
         children_count = size(children(elem))[1]
 
-        output *= " do;[ \n"
+        output *= "do;[\n"
 
         idx = 0
         for child in children(elem)
@@ -428,18 +422,18 @@ function parse_tree(elem, output, depth; partial = true) :: String
           if idx < children_count
             if isa(child, HTMLText) ||
                 ( isa(child, HTMLElement) && ( ! in("type", collect(keys(attrs(child)))) || ( in("type", collect(keys(attrs(child)))) && (attrs(child)["type"] != "julia/eval") ) ) )
-                ! isempty(inner) && (inner = repeat("\t", depth) * inner * " \n")
+                ! isempty(inner) && (inner = repeat("\t", depth) * inner * "\n")
             end
           end
         end
-        ! isempty(inner) && (output *= inner * "\n " * repeat("\t", depth))
+        ! isempty(inner) && (output *= inner * "\n" * repeat("\t", depth))
 
-        output *= "]end \n"
+        output *= "]end\n"
       end
     end
 
   elseif isa(elem, HTMLText)
-    content = replace(elem.text, r"<:(.*):>", (x) -> replace(replace(x, "<:", ""), ":>", "") |> strip |> string )
+    content = replace(elem.text, r"<:(.*):>", (x) -> replace(replace(x, "<:", ""), ":>", "") |> strip |> string)
     output *= repeat("\t", depth) * "\"$(content)\""
   end
 
