@@ -173,7 +173,6 @@ function _include_template(path::String; partial = true, func_name = "") :: Stri
     build_module(html_to_flax(path, partial = partial), path)
 
     isdefined(Flax, Symbol(m_name(path))) || eval(Flax, parse("using $(m_name(path))"))
-    isdefined(current_module(), Symbol(m_name(path))) && eval(current_module(), parse("Revise.revise($(m_name(path)))"))
 
     return getfield(Flax, f_name) |> Base.invokelatest
   catch ex
