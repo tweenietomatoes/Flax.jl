@@ -3,7 +3,11 @@ Compiled templating language for Genie.
 """
 module Flax
 
-using Genie, Renderer, Gumbo, Logger, Genie.Configuration, Router, SHA, App, Reexport, JSON, DataStructures, Revise
+using Genie, Renderer, Gumbo, Logger, Genie.Configuration, Router, SHA, App, Reexport, JSON, DataStructures
+
+if is_dev()
+  @eval using Revise
+end
 
 if IS_IN_APP
   @eval parse("@dependencies")
