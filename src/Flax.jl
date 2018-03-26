@@ -73,10 +73,10 @@ Parses HTML attributes.
 function attributes(attrs::Vector{Pair{Symbol,String}} = Vector{Pair{Symbol,String}}()) :: Vector{String}
   a = String[]
   for (k,v) in attrs
-    if startswith(v, "<:") && endswith(v, ":>")
-      v = replace("'", "\"") |> strip
-      v = "\$($v)"
-    end
+    # if startswith(v, "<:") && endswith(v, ":>")
+    #   v = replace("'", "\"") |> strip
+    #   v = "\$($v)"
+    # end
     push!(a, "$(k)=\"$(v)\"")
   end
 
@@ -233,6 +233,7 @@ end
 Renders a Flax view corresponding to a resource and a controller action.
 """
 function flax(resource::Union{Symbol,String}, action::Union{Symbol,String}, layout::Union{Symbol,String}; vars...) :: Dict{Symbol,String}
+  err_msg = "The Flax view must return a function"
   try
     julia_action_template_func = joinpath(Genie.RESOURCES_PATH, string(resource), Renderer.VIEWS_FOLDER, string(action) * FILE_EXT) |> include
     julia_layout_template_func = joinpath(Genie.APP_PATH, Renderer.LAYOUTS_FOLDER, string(layout) * FILE_EXT) |> include
@@ -242,21 +243,19 @@ function flax(resource::Union{Symbol,String}, action::Union{Symbol,String}, layo
     if isa(julia_action_template_func, Function)
       task_local_storage(:__yield, julia_action_template_func())
     else
-      message = "The Flax view should return a function"
-      Logger.log(message, :err)
+      Logger.log(err_msg, :err)
       Logger.log("$(@__FILE__):$(@__LINE__)")
 
-      throw(message)
+      throw(err_msg)
     end
 
     return  if isa(julia_layout_template_func, Function)
               Dict{Symbol,AbstractString}(:html => julia_layout_template_func() |> string |> doc)
             else
-              message = "The Flax template should return a function"
-              Logger.log(message, :err)
+              Logger.log(err_msg, :err)
               Logger.log("$(@__FILE__):$(@__LINE__)")
 
-              throw(message)
+              throw(err_msg)
             end
   catch ex
     Logger.log(string(ex), :err)
@@ -372,14 +371,13 @@ end
 
 Parses a Gumbo tree structure into a `string` of Flax code.
 """
-function parse_tree(elem, output, depth; partial = true) :: String
+function parse_tree(elem::Union{HTMLElement,HTMLText}, output::String = "", depth::Int = 0; partial = true) :: String
   if isa(elem, HTMLElement)
 
-    tag_name = lowercase(string(tag(elem)))
+    tag_name = replace(lowercase(string(tag(elem))), "-", ".")
     invalid_tag = partial && (tag_name == "html" || tag_name == "head" || tag_name == "body")
 
     if tag_name == "script" && in("type", collect(keys(attrs(elem))))
-
       if attrs(elem)["type"] == "julia/eval"
         if ! isempty(children(elem))
           output *= repeat("\t", depth) * string(children(elem)[1].text) * "\n"
@@ -387,7 +385,7 @@ function parse_tree(elem, output, depth; partial = true) :: String
       end
 
     else
-
+      # output *= (repeat("\t", depth) * (invalid_tag ? "" : "Flax.$(tag_name)("))
       output *= repeat("\t", depth) * ( ! invalid_tag ? "Flax.$(tag_name)(" : "Flax.skip_element(" )
 
       attributes = String[]
@@ -409,13 +407,14 @@ function parse_tree(elem, output, depth; partial = true) :: String
         end
       end
 
+      # output *= invalid_tag ? "" : join(attributes, ", ") * ") "
       output *= join(attributes, ", ") * ") "
-      # end
 
       inner = ""
       if ! isempty(children(elem))
         children_count = size(children(elem))[1]
 
+        # output *= invalid_tag ? "" : "do;[\n"
         output *= "do;[\n"
 
         idx = 0
@@ -429,8 +428,9 @@ function parse_tree(elem, output, depth; partial = true) :: String
             end
           end
         end
-        ! isempty(inner) && (output *= inner * "\n" * repeat("\t", depth))
+        isempty(inner) || (output *= inner * "\n" * repeat("\t", depth))
 
+        # output *= invalid_tag ? "" : "]end\n"
         output *= "]end\n"
       end
     end
@@ -440,7 +440,6 @@ function parse_tree(elem, output, depth; partial = true) :: String
     output *= repeat("\t", depth) * "\"$(content)\""
   end
 
-  # @show output
   output
 end
 
