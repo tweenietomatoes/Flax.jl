@@ -3,7 +3,7 @@ Compiled templating language for Genie.
 """
 module Flax
 
-using Genie, Renderer, Gumbo, Logger, Genie.Configuration, Router, SHA, App, Reexport, JSON, DataStructures
+using Genie, Renderer, Gumbo, Logger, Genie.Configuration, Router, SHA, App, Reexport, JSON, DataStructures, Memoize
 @reexport using HttpCommon
 
 if is_dev()
@@ -74,14 +74,15 @@ Parses HTML attributes.
 function attributes(attrs::Vector{Pair{Symbol,String}} = Vector{Pair{Symbol,String}}()) :: Vector{String}
   a = String[]
   for (k,v) in attrs
-    # if startswith(v, "<:") && endswith(v, ":>")
-    #   v = replace("'", "\"") |> strip
-    #   v = "\$($v)"
-    # end
     push!(a, "$(k)=\"$(v)\"")
   end
 
   a
+end
+
+
+@memoize function normalize_element(elem::String)
+  replace(string(lowercase(elem)), "_", "-")
 end
 
 
@@ -92,13 +93,15 @@ Generates a regular HTML element in the form <...></...>
 """
 function normal_element(f::Function, elem::String, attrs::Vector{Pair{Symbol,String}} = Vector{Pair{Symbol,String}}()) :: HTMLString
   a = attributes(attrs)
+  elem = normalize_element(elem)
 
-  "<$(string(lowercase(elem)) * (! isempty(a) ? (" " * join(a, " ")) : ""))>$(prepare_template(f()))</$(string(lowercase(elem)))>"
+  "<$(elem * (! isempty(a) ? (" " * join(a, " ")) : ""))>$(prepare_template(f()))</$(elem)>"
 end
 function normal_element(elem::String, attrs::Vector{Pair{Symbol,String}} = Vector{Pair{Symbol,String}}()) :: HTMLString
   a = attributes(attrs)
+  elem = normalize_element(elem)
 
-  "<$(string(lowercase(elem)) * (! isempty(a) ? (" " * join(a, " ")) : ""))></$(string(lowercase(elem)))>"
+  "<$(elem * (! isempty(a) ? (" " * join(a, " ")) : ""))></$(elem)>"
 end
 
 
@@ -109,8 +112,9 @@ Generates a void HTML element in the form <...>
 """
 function void_element(elem::String, attrs::Vector{Pair{Symbol,String}} = Vector{Pair{Symbol,String}}()) :: HTMLString
   a = attributes(attrs)
+  elem = normalize_element(elem)
 
-  "<$(string(lowercase(elem)) * (! isempty(a) ? (" " * join(a, " ")) : ""))>"
+  "<$(elem * (! isempty(a) ? (" " * join(a, " ")) : ""))>"
 end
 
 
@@ -375,7 +379,7 @@ Parses a Gumbo tree structure into a `string` of Flax code.
 function parse_tree(elem::Union{HTMLElement,HTMLText}, output::String = "", depth::Int = 0; partial = true) :: String
   if isa(elem, HTMLElement)
 
-    tag_name = replace(lowercase(string(tag(elem))), "-", ".")
+    tag_name = replace(lowercase(string(tag(elem))), "-", "_")
     invalid_tag = partial && (tag_name == "html" || tag_name == "head" || tag_name == "body")
 
     if tag_name == "script" && in("type", collect(keys(attrs(elem))))
@@ -491,32 +495,49 @@ Generated functions that represent Flax functions definitions corresponding to H
 """
 function register_elements() :: Void
   for elem in NORMAL_ELEMENTS
-    """
-      function $elem(f::Function = ()->"", attrs::Pair{Symbol,String}...) :: HTMLString
-        \"\"\"\$(normal_element(f, "$(string(elem))", Pair{Symbol,String}[attrs...]))\"\"\"
-      end
-    """ |> parse |> eval
-
-    """
-      function $elem(attrs::Pair{Symbol,String}...) :: HTMLString
-        \"\"\"\$(normal_element("$(string(elem))", Pair{Symbol,String}[attrs...]))\"\"\"
-      end
-    """ |> parse |> eval
-
-    # @eval export $elem
+    register_normal_element(elem)
   end
 
   for elem in VOID_ELEMENTS
-    """
-      function $elem(attrs::Pair{Symbol,String}...) :: HTMLString
-        \"\"\"\$(void_element("$(string(elem))", Pair{Symbol,String}[attrs...]))\"\"\"
-      end
-    """ |> parse |> eval
-
-    # @eval export $elem
+    register_void_element(elem)
   end
 
   nothing
+end
+
+
+function register_element(elem::Symbol, elem_type::Symbol = :normal)
+  elem_type != :normal && elem_type != :void && error("elem_type must be one of :normal or :void")
+
+  elem_type == :normal ? register_normal_element(elem) : register_void_element(elem)
+end
+
+
+"""
+"""
+function register_normal_element(elem::Symbol)
+  """
+    function $elem(f::Function = ()->"", attrs::Pair{Symbol,String}...) :: HTMLString
+      \"\"\"\$(normal_element(f, "$(string(elem))", Pair{Symbol,String}[attrs...]))\"\"\"
+    end
+  """ |> parse |> eval
+
+  """
+    function $elem(attrs::Pair{Symbol,String}...) :: HTMLString
+      \"\"\"\$(normal_element("$(string(elem))", Pair{Symbol,String}[attrs...]))\"\"\"
+    end
+  """ |> parse |> eval
+end
+
+
+"""
+"""
+function register_void_element(elem::Symbol)
+  """
+    function $elem(attrs::Pair{Symbol,String}...) :: HTMLString
+      \"\"\"\$(void_element("$(string(elem))", Pair{Symbol,String}[attrs...]))\"\"\"
+    end
+  """ |> parse |> eval
 end
 
 push!(LOAD_PATH,  abspath(Genie.HELPERS_PATH))
