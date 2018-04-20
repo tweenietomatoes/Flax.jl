@@ -175,13 +175,15 @@ function _include_template(path::String; partial = true, func_name = "") :: Stri
   f_name = func_name != "" ? Symbol(func_name) : Symbol(function_name(path))
   try
     build_path = joinpath(Genie.BUILD_PATH, BUILD_NAME, m_name(path) * ".jl")
+
     isdefined(Flax, f_name) &&
       (App.config.flax_compile_templates || ! build_is_stale(path, build_path)) &&
         return getfield(Flax, f_name) |> Base.invokelatest
 
     build_module(html_to_flax(path, partial = partial), path)
+    sleep(0.1)
 
-    isdefined(Flax, Symbol(m_name(path))) || eval(Flax, parse("using $(m_name(path))"))
+    isdefined(Flax, Symbol(m_name(path))) ? revise() : eval(Flax, parse("using $(m_name(path))"))
 
     return getfield(Flax, f_name) |> Base.invokelatest
   catch ex
