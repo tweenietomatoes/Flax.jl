@@ -81,7 +81,7 @@ function attributes(attrs::Vector{Pair{Symbol,String}} = Vector{Pair{Symbol,Stri
 end
 
 
-@memoize function normalize_element(elem::String)
+function normalize_element(elem::String)
   replace(string(lowercase(elem)), "_", "-")
 end
 
