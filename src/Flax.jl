@@ -232,6 +232,19 @@ function html(resource::Union{Symbol,String}, action::Union{Symbol,String}, layo
     rethrow(ex)
   end
 end
+function html(view::String, layout::String = "<% @yield %>"; vars...) :: Dict{Symbol,String}
+  try
+    task_local_storage(:__vars, Dict{Symbol,Any}(vars))
+    task_local_storage(:__yield, eval(parse(parse_string(view))))
+
+    Dict{Symbol,AbstractString}(:html => eval(parse(parse_string(layout, partial = false))) |> string |> doc)
+  catch ex
+    Logger.log(string(ex), :err)
+    Logger.log("$(@__FILE__):$(@__LINE__)", :err)
+
+    rethrow(ex)
+  end
+end
 
 
 """
@@ -374,6 +387,14 @@ end
 
 
 """
+"""
+function parse_string(s::String; partial = true) :: String
+  htmldoc = parse_tags(s) |> Gumbo.parsehtml
+  parse_tree(htmldoc.root, "", 0, partial = partial)
+end
+
+
+"""
     parse_tree(elem, output, depth; partial = true) :: String
 
 Parses a Gumbo tree structure into a `string` of Flax code.
@@ -443,8 +464,8 @@ function parse_tree(elem::Union{HTMLElement,HTMLText}, output::String = "", dept
     end
 
   elseif isa(elem, HTMLText)
-    content = replace(elem.text, r"<:(.*):>", (x) -> replace(replace(x, "<:", ""), ":>", "") |> strip |> string)
-    output *= repeat("\t", depth) * "\"$(content)\""
+    # content = replace(elem.text, r"<:(.*):>", (x) -> replace(replace(x, "<:", ""), ":>", "") |> strip |> string)
+    output *= repeat("\t", depth) * "\"$(elem.text |> strip |> string)\""
   end
 
   output
@@ -456,13 +477,14 @@ end
 
 Parses special Flax tags.
 """
-function parse_tags(line::Tuple{Int64,String}, strip_close_tag = false) :: String
-  code = line[2]
-
-  code = replace(code, "<%", """<script type="julia/eval">""")
-  code = replace(code, "%>", strip_close_tag ? "" : """</script>""")
-
-  code
+function parse_tags(line::Tuple{Int64,String}) :: String
+  parse_tags(line[2])
+end
+function parse_tags(code::String) :: String
+  # code = replace(code, "<%", """<script type="julia/eval">""")
+  code = replace(code, "<%", "\$(")
+  # replace(code, "%>", strip_close_tag ? "" : """</script>""")
+  replace(code, "%>", ")")
 end
 
 
