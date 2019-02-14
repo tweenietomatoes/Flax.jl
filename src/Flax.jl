@@ -3,7 +3,7 @@ Compiled templating language for Genie.
 """
 module Flax
 
-using Genie, Renderer, Gumbo, Logger, Genie.Configuration, Router, SHA, App, Reexport, JSON, DataStructures
+using Genie, Renderer, Gumbo, Genie.Loggers, Genie.Configuration, Router, SHA, App, Reexport, JSON, DataStructures
 @reexport using HttpCommon
 
 if is_dev()
@@ -60,7 +60,7 @@ function prepare_template(s::String) :: String
 end
 function prepare_template{T}(v::Vector{T}) :: String
   filter!(v) do (x)
-    ! isa(x, Void)
+    ! isa(x, nothing)
   end
   join(v)
 end
@@ -139,7 +139,7 @@ Includes a template inside another.
 """
 function include_template(path::String; partial = true, func_name = "") :: String
   if App.config.log_views
-    Logger.log("Including $path", :info)
+    log("Including $path", :info)
     @time _include_template(path, partial = partial, func_name = func_name)
   else
     _include_template(path, partial = partial, func_name = func_name)
@@ -187,7 +187,7 @@ function _include_template(path::String; partial = true, func_name = "") :: Stri
 
     return getfield(Flax, f_name) |> Base.invokelatest
   catch ex
-    Logger.log("$(@__FILE__):$(@__LINE__)", :err)
+    log("$(@__FILE__):$(@__LINE__)", :err)
 
     rethrow(ex)
   end
@@ -208,7 +208,7 @@ function build_is_stale(file_path::String, build_path::String) :: Bool
   build_mtime = stat(build_path).mtime
   status = file_mtime > build_mtime
 
-  App.config.log_views && status && Logger.log("🚨  Flax view $file_path build $build_path is stale")
+  App.config.log_views && status && log("🚨  Flax view $file_path build $build_path is stale")
 
   status
 end
@@ -226,8 +226,8 @@ function html(resource::Union{Symbol,String}, action::Union{Symbol,String}, layo
 
     Dict{Symbol,AbstractString}(:html => include_template(joinpath(Genie.APP_PATH, Renderer.LAYOUTS_FOLDER, string(layout)), partial = false) |> string |> doc)
   catch ex
-    Logger.log(string(ex), :err)
-    Logger.log("$(@__FILE__):$(@__LINE__)", :err)
+    log(string(ex), :err)
+    log("$(@__FILE__):$(@__LINE__)", :err)
 
     rethrow(ex)
   end
@@ -239,8 +239,8 @@ function html(view::String, layout::String = "<% @yield %>"; vars...) :: Dict{Sy
 
     Dict{Symbol,AbstractString}(:html => eval(parse(parse_string(layout, partial = false))) |> string |> doc)
   catch ex
-    Logger.log(string(ex), :err)
-    Logger.log("$(@__FILE__):$(@__LINE__)", :err)
+    log(string(ex), :err)
+    log("$(@__FILE__):$(@__LINE__)", :err)
 
     rethrow(ex)
   end
@@ -263,8 +263,8 @@ function flax(resource::Union{Symbol,String}, action::Union{Symbol,String}, layo
     if isa(julia_action_template_func, Function)
       task_local_storage(:__yield, julia_action_template_func())
     else
-      Logger.log(err_msg, :err)
-      Logger.log("$(@__FILE__):$(@__LINE__)")
+      log(err_msg, :err)
+      log("$(@__FILE__):$(@__LINE__)")
 
       throw(err_msg)
     end
@@ -272,14 +272,14 @@ function flax(resource::Union{Symbol,String}, action::Union{Symbol,String}, layo
     return  if isa(julia_layout_template_func, Function)
               Dict{Symbol,AbstractString}(:html => julia_layout_template_func() |> string |> doc)
             else
-              Logger.log(err_msg, :err)
-              Logger.log("$(@__FILE__):$(@__LINE__)")
+              log(err_msg, :err)
+              log("$(@__FILE__):$(@__LINE__)")
 
               throw(err_msg)
             end
   catch ex
-    Logger.log(string(ex), :err)
-    Logger.log("$(@__FILE__):$(@__LINE__)", :err)
+    log(string(ex), :err)
+    log("$(@__FILE__):$(@__LINE__)", :err)
 
     rethrow(ex)
   end
@@ -297,9 +297,9 @@ function json(resource::Union{Symbol,String}, action::Union{Symbol,String}; vars
 
     return Dict{Symbol,AbstractString}(:json => (joinpath(Genie.RESOURCES_PATH, string(resource), Renderer.VIEWS_FOLDER, string(action) * JSON_FILE_EXT) |> include) |> JSON.json)
   catch ex
-    Logger.log("Error generating JSON view", :err)
-    Logger.log(string(ex), :err)
-    Logger.log("$(@__FILE__):$(@__LINE__)", :err)
+    log("Error generating JSON view", :err)
+    log(string(ex), :err)
+    log("$(@__FILE__):$(@__LINE__)", :err)
 
     rethrow(ex)
   end
@@ -517,7 +517,7 @@ end
 
 Generated functions that represent Flax functions definitions corresponding to HTML elements.
 """
-function register_elements() :: Void
+function register_elements() :: Nothing
   for elem in NORMAL_ELEMENTS
     register_normal_element(elem)
   end
@@ -572,7 +572,7 @@ push!(LOAD_PATH,  abspath(Genie.HELPERS_PATH))
 
 Loads helpers and makes them available in the view layer.
 """
-function include_helpers() :: Void
+function include_helpers() :: Nothing
   for h in readdir(Genie.HELPERS_PATH)
     if isfile(joinpath(Genie.HELPERS_PATH, h)) && endswith(h, "Helper.jl")
       eval("""@reexport using $(replace(h, r"\.jl$", ""))""" |> parse)
